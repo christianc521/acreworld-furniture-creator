@@ -1,0 +1,13 @@
+{
+	"autodeskProduct":	"Fusion",
+	"type":	"addin",
+	"id":	"f0f409a4-aa96-4b70-a7ca-e6835dbdee9c",
+	"author":	"Christian Cruz",
+	"description":	{
+		"":	"Creates piping to join dowels"
+	},
+	"version":	"0.1.0",
+	"runOnStartup":	false,
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}
