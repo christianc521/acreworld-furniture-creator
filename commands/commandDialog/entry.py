@@ -1,16 +1,4 @@
-#  Copyright 2022 by Autodesk, Inc.
-#  Permission to use, copy, modify, and distribute this software in object code form
-#  for any purpose and without fee is hereby granted, provided that the above copyright
-#  notice appears in all copies and that both that copyright notice and the limited
-#  warranty and restricted rights notice below appear in all supporting documentation.
-#
-#  AUTODESK PROVIDES THIS PROGRAM "AS IS" AND WITH ALL FAULTS. AUTODESK SPECIFICALLY
-#  DISCLAIMS ANY IMPLIED WARRANTY OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR USE.
-#  AUTODESK, INC. DOES NOT WARRANT THAT THE OPERATION OF THE PROGRAM WILL BE
-#  UNINTERRUPTED OR ERROR FREE.
-
 import math
-
 import adsk.core
 import adsk.fusion
 import os
@@ -23,7 +11,7 @@ rootComp = design.rootComponent
 
 CMD_NAME = os.path.basename(os.path.dirname(__file__))
 CMD_ID = f'{config.COMPANY_NAME}_{config.ADDIN_NAME}_{CMD_NAME}'
-CMD_Description = 'Welcome to the Fusion API'
+CMD_Description = 'Creates a threaded cap on circular edges'
 IS_PROMOTED = True
 
 # Global variables by referencing values from /config.py
