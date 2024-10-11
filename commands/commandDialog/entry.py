@@ -8,6 +8,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 design = app.activeProduct
 rootComp = design.rootComponent
+features = rootComp.features
 
 CMD_NAME = os.path.basename(os.path.dirname(__file__))
 CMD_ID = f'{config.COMPANY_NAME}_{config.ADDIN_NAME}_{CMD_NAME}'
@@ -92,7 +93,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # Connect to the events that are needed by this command.
     futil.add_handler(args.command.execute, command_execute, local_handlers=local_handlers)
-    futil.add_handler(args.command.inputChanged, command_input_changed, local_handlers=local_handlers)
+    # futil.add_handler(args.command.inputChanged, command_input_changed, local_handlers=local_handlers)
     futil.add_handler(args.command.destroy, command_destroy, local_handlers=local_handlers)
 
     button_icons = os.path.join(ICON_FOLDER, 'buttons')
@@ -120,6 +121,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     # Get the selection input
     selection_input = inputs.itemById('selection_input')
     selected_edge = selection_input.selection(0).entity
+    reverseFeat = False
 
     # Check if the selected entity is a BRepEdge
     if isinstance(selected_edge, adsk.fusion.BRepEdge):
@@ -128,9 +130,21 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Check if the edge geometry is a Circle3D
         if isinstance(edge_geometry, adsk.core.Circle3D):
             futil.log('selected edge is a circle')
+            #Check for planar face
+            edge_faces = selected_edge.faces
+            for j in range(edge_faces.count):
+                edge_face = edge_faces.item(j)
+                face_eval = edge_face.geometry.surfaceType
+                if (face_eval == 0):
+                    circle_face = edge_face
+                    break
+            
+            face_geometries = circle_face.geometry
+            
             center_point = edge_geometry.center
-            normal_vector = edge_geometry.normal
+            normal_vector = face_geometries.normal
             radius = edge_geometry.radius
+            
 
     # create a base feature
     baseFeat = None
@@ -144,18 +158,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
     cap_height = 1.0      # 10 mm cap height (1.0 cm)
     overlap_amount = 0.5  # 5 mm overlap over dowel (0.5 cm)
 
-    # Create a plane using the circle's center and normal
-    plane = adsk.core.Plane.create(center_point, normal_vector)
-
-    # Create a construction plane at the circle's location
-    planes = rootComp.constructionPlanes
-    planeInput = planes.createInput()
-    planeInput.setByPlane(plane)
-    construction_plane = planes.add(planeInput)
-
-    # Create a new sketch on the construction plane
+    # Create a new sketch on the circle face
     sketches = rootComp.sketches
-    sketch = sketches.add(construction_plane)
+    sketch = sketches.add(circle_face)
 
     # Transform the circle's center point into the sketch's coordinate system
     sketch_center_point = sketch.modelToSketchSpace(center_point)
@@ -273,42 +278,42 @@ def command_execute(args: adsk.core.CommandEventArgs):
         baseFeat.finishEdit()
 
 
-# This function will be called when the user changes anything in the command dialog.
-def command_input_changed(args: adsk.core.InputChangedEventArgs):
-    changed_input = args.input
-    inputs = args.input.parentCommand.commandInputs
-    futil.log(f'{CMD_NAME} Input Changed Event fired from a change to {changed_input.id}')
+# # This function will be called when the user changes anything in the command dialog.
+# def command_input_changed(args: adsk.core.InputChangedEventArgs):
+#     changed_input = args.input
+#     inputs = args.input.parentCommand.commandInputs
+#     futil.log(f'{CMD_NAME} Input Changed Event fired from a change to {changed_input.id}')
 
-    # Get a reference to your command's inputs
-    selection_input: adsk.core.SelectionCommandInput = inputs.itemById('selection_input')
-    distance_input: adsk.core.DistanceValueCommandInput = inputs.itemById('distance_input')
-    bool_value_input: adsk.core.BoolValueCommandInput = inputs.itemById('bool_value_input')
-    string_value_input: adsk.core.StringValueCommandInput = inputs.itemById('string_value_input')
+#     # Get a reference to your command's inputs
+#     selection_input: adsk.core.SelectionCommandInput = inputs.itemById('selection_input')
+#     distance_input: adsk.core.DistanceValueCommandInput = inputs.itemById('distance_input')
+#     bool_value_input: adsk.core.BoolValueCommandInput = inputs.itemById('bool_value_input')
+#     string_value_input: adsk.core.StringValueCommandInput = inputs.itemById('string_value_input')
 
-    # create plane
-    futil.log(f'{selection_input.selection(0).entity}')
-    # Show and update the distance input when a plane is selected
-    if changed_input.id == selection_input.id:
-        if selection_input.selectionCount > 0:
-            selection = selection_input.selection(0)
-            selection_point = selection.point
-            selected_entity = selection.entity
-            plane = selected_entity.geometry
+#     # create plane
+#     futil.log(f'{selection_input.selection(0).entity}')
+#     # Show and update the distance input when a plane is selected
+#     if changed_input.id == selection_input.id:
+#         if selection_input.selectionCount > 0:
+#             selection = selection_input.selection(0)
+#             selection_point = selection.point
+#             selected_entity = selection.entity
+#             plane = selected_entity.geometry
 
-            distance_input.setManipulator(selection_point, plane.normal)
-            distance_input.expression = "10mm * 2"
-            distance_input.isEnabled = True
-            distance_input.isVisible = True
-        else:
-            distance_input.isEnabled = False
-            distance_input.isVisible = False
+#             distance_input.setManipulator(selection_point, plane.normal)
+#             distance_input.expression = "10mm * 2"
+#             distance_input.isEnabled = True
+#             distance_input.isVisible = True
+#         else:
+#             distance_input.isEnabled = False
+#             distance_input.isVisible = False
 
-    # Enable edit on the string value input when the boolean is selected
-    elif changed_input.id == bool_value_input.id:
-        if bool_value_input.value:
-            string_value_input.value = 'The Bool Value is checked'
-        else:
-            string_value_input.value = 'The Bool Value is not checked'
+#     # Enable edit on the string value input when the boolean is selected
+#     elif changed_input.id == bool_value_input.id:
+#         if bool_value_input.value:
+#             string_value_input.value = 'The Bool Value is checked'
+#         else:
+#             string_value_input.value = 'The Bool Value is not checked'
 
 
 # This function will be called when the user completes the command.

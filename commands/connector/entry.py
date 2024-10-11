@@ -133,13 +133,27 @@ def command_execute_intersection(args: adsk.core.CommandEventArgs):
         # Check if the selected entity is a BRepEdge
         if isinstance(selected_edge, adsk.fusion.BRepEdge):
             edge_geometry = selected_edge.geometry
+            
 
             # Check if the edge geometry is a Circle3D
             if isinstance(edge_geometry, adsk.core.Circle3D):
-                center_point = edge_geometry.center
-                normal_vector = edge_geometry.normal
-                radius = edge_geometry.radius
+                # Check all faces associated with the edge
+                edge_faces = selected_edge.faces
 
+                #Check for planar face
+                for j in range(edge_faces.count):
+                    edge_face = edge_faces.item(j)
+                    face_eval = edge_face.geometry.surfaceType
+                    futil.log(f'Selection {i} face {j} surfaceType: {face_eval}')
+                    if (face_eval == 0):
+                        circle_face = edge_face
+                        break
+                
+                face_geometries = circle_face.geometry
+                center_point = edge_geometry.center
+                normal_vector = face_geometries.normal
+                radius = edge_geometry.radius
+                futil.log(f'Center point: {center_point}, normal: {normal_vector}, radius: {radius}')
                 # Store the point and direction
                 points.append(center_point)
                 directions.append(normal_vector)
