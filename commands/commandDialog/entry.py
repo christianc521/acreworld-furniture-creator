@@ -9,6 +9,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 design = app.activeProduct
 rootComp = design.rootComponent
+newOccu = rootComp.occurrences.addNewComponent(adsk.core.Matrix3D.create())
 features = rootComp.features
 
 
@@ -70,7 +71,7 @@ def stop():
     toolbar_tab = workspace.toolbarTabs.itemById(TAB_ID)
     command_control = panel.controls.itemById(CMD_ID)
     command_definition = ui.commandDefinitions.itemById(CMD_ID)
-
+    
     # Delete the button command control
     if command_control:
         command_control.deleteMe()
@@ -86,7 +87,6 @@ def stop():
     # Delete the tab if it is empty
     if toolbar_tab.toolbarPanels.count == 0:
         toolbar_tab.deleteMe()
-
 
 
 # Function to be called when a user clicks the corresponding button in the UI.
@@ -117,8 +117,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 # This function will be called when the user clicks the OK button in the command dialog.
 def command_execute(args: adsk.core.CommandEventArgs):
 
-    
-
     futil.log(f'{CMD_NAME} Command Execute Event')
     inputs = args.command.commandInputs
 
@@ -133,7 +131,6 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
     # Store circle geometries for later use
     circle_geometries = []
-
 
     # Iterate over the selected edges
     for i in range(selection_input.selectionCount):
@@ -185,27 +182,34 @@ def command_execute(args: adsk.core.CommandEventArgs):
             return
     
     # Compute the intersection point
+    ## Create as vertex (need to do)
+    
+
     intersection_point = compute_best_intersection(points, directions)
 
+
     if intersection_point:
-        newOccu = rootComp.occurrences.addNewComponent(adsk.core.Matrix3D.create())
+        cap_collection = adsk.core.ObjectCollection.create()
+        connector_collection = adsk.core.ObjectCollection.create()
         newComp = newOccu.component
         baseFeat = None
         if design.designType == adsk.fusion.DesignTypes.ParametricDesignType:
             baseFeat = newComp.features.baseFeatures.add()
             baseFeat.startEdit()
 
-        
-
         # Create a construction point at the intersection
-        points_collection = newComp.constructionPoints
+        points_collection = rootComp.constructionPoints
+        # brepBodyDef = adsk.fusion.BRepBodyDefinition.create()
+        # intersection_point = brepBodyDef.createVertexDefinition(intersection_point)
+        # pointInput = rootComp.constructionPoints.createInput()
+        # construct_point = pointInput.setByPoint(intersection_point)
+        # rootComp.constructionPoints.add(pointInput)
         pointInput = points_collection.createInput()
         pointInput.setByPoint(intersection_point)
         points_collection.add(pointInput)
-
         for geom in circle_geometries:
-            create_cap(geom, newOccu)
-            create_tube(geom, intersection_point, newComp)
+            size = create_cap(geom, newComp, cap_collection)
+            create_tube(geom, intersection_point, newComp, size, connector_collection)
 
         if baseFeat:
             baseFeat.finishEdit()
@@ -218,8 +222,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     else:
         ui.messageBox('Could not find an intersection point.')
 
-def create_cap(circle_geom, newOccu):
-    newComp = newOccu.component
+def create_cap(circle_geom, newComp, cap_collection):
 
     circle_face = circle_geom['circle_face']
     center_point = circle_geom['center_point']
@@ -281,6 +284,7 @@ def create_cap(circle_geom, newOccu):
     # Create the extrusion to form the cap walls
     cap_walls_extrusion = extrudes.add(ext_input_walls)
     cap_body = cap_walls_extrusion.bodies.item(0)
+    cap_collection.add(cap_body)
 
     # Now, extrude the inner circle profile in the negative direction to cap off the end
     ext_input_inner = extrudes.createInput(inner_profile, adsk.fusion.FeatureOperations.JoinFeatureOperation)
@@ -289,14 +293,12 @@ def create_cap(circle_geom, newOccu):
     ext_input_inner.setOneSideExtent(extent_distance_negative, adsk.fusion.ExtentDirections.PositiveExtentDirection)
 
     # Set the target body to the cap body
-    ext_input_inner.participantBodies = [cap_body]
+    ext_input_inner.participantBodies = [cap_collection.item(cap_collection.count - 1)]
 
     # Create the extrusion to cap off the end
     cap_end_extrusion = extrudes.add(ext_input_inner)
 
     # Add threading to the outer face
-    # Find the outer cylindrical face
-    # Optional: Add threading to the outer face
     # Find the outer cylindrical face
     outer_faces = cap_body.faces
     outer_radius = radius + wall_thickness
@@ -308,7 +310,6 @@ def create_cap(circle_geom, newOccu):
                 threads = newComp.features.threadFeatures
                 thread_data_query = threads.threadDataQuery
                 threadTypes = thread_data_query.allThreadTypes
-                futil.log(f"{threadTypes}")
                 thread_type = 'ISO Metric profile'  # Specify your thread type
                 is_internal = False  # False for external threads
                 # Calculate the outer diameter (in mm if units are cm)
@@ -321,7 +322,7 @@ def create_cap(circle_geom, newOccu):
                     try:
                         # Remove any non-numeric characters (e.g., 'M')
                         thread_size = float(s.replace('M', '').split('x')[0])
-                        if abs(thread_size - outer_diameter_mm) < 0.5:
+                        if abs(thread_size - outer_diameter_mm) < 2.5:
                             size = s
                             break
                     except ValueError:
@@ -345,10 +346,11 @@ def create_cap(circle_geom, newOccu):
                 thread_input.isModeled = True
                 threads.add(thread_input)
                 break
-    # cap_body = cap_body.moveToComponent(newOccu)
+    
+    return size
     
 
-def create_tube(circle_geom, intersection_point, newComp):
+def create_tube(circle_geom, intersection_point, newComp, size, connector_collection):
     """
     Creates a tube from the circle to the intersection point.
 
@@ -363,31 +365,70 @@ def create_tube(circle_geom, intersection_point, newComp):
     # Wall thickness (convert 4 mm to cm if units are cm)
     wall_thickness = 0.4  # 4 mm wall thickness (0.4 cm)
 
+    # Direction vector from center_point to intersection_point
+    direction_vector = adsk.core.Vector3D.create(
+        intersection_point.x - center_point.x,
+        intersection_point.y - center_point.y,
+        intersection_point.z - center_point.z
+    )
+    direction_vector.normalize()
+
+    # Offset distance in cm (10 mm = 1 cm)
+    offset_distance = -1.0  # Negative to move back along the path
+
+    # Calculate the offset vector
+    offset_vector = direction_vector.copy()
+    offset_vector.scaleBy(offset_distance)  # Scale by -1.0 cm
+
+    # Determine the new starting point
+    new_start_point = center_point.copy()
+    new_start_point.translateBy(offset_vector)
+
     path_sketch = newComp.sketches.add(rootComp.xYConstructionPlane)
     path_sketch.is3D = True
 
-    path_line = path_sketch.sketchCurves.sketchLines.addByTwoPoints(center_point, intersection_point)
+    path_line = path_sketch.sketchCurves.sketchLines.addByTwoPoints(new_start_point, intersection_point)
 
     path = newComp.features.createPath(path_line,False)
 
     # Create a sketch on the profile plane
-    sketches = newComp.sketches
-    sketch = sketches.add(circle_face)
+    connector_sketches = newComp.sketches
+    sketch = connector_sketches.add(circle_face)
 
     sketch_center_point = sketch.modelToSketchSpace(center_point)
     # Draw two concentric circles representing the tube cross-section
     sketch_circles = sketch.sketchCurves.sketchCircles
-    # Inner circle (matches circle's radius)
-    inner_circle = sketch_circles.addByCenterRadius(sketch_center_point, radius + wall_thickness)
+    # # Inner circle (matches circle's radius)
+    # inner_circle = sketch_circles.addByCenterRadius(sketch_center_point, radius + wall_thickness)
     # Outer circle (radius + wall thickness)
     outer_circle = sketch_circles.addByCenterRadius(sketch_center_point, radius + wall_thickness + wall_thickness)
 
-    # Get the profile of the ring
+    # Get the profiles of the sketch
     profiles = sketch.profiles
     if profiles.count == 0:
         ui.messageBox('No profile found in the sketch.')
         return
-    profile = profiles.item(2)
+
+    # Initialize variables to store the largest area and corresponding profile
+    max_area = 0
+    largest_profile = None
+
+    # Loop over the profiles to find the one with the largest area
+    for i in range(profiles.count):
+        prof = profiles.item(i)
+        # Get the area properties of the profile
+        area_props = prof.areaProperties(adsk.fusion.CalculationAccuracy.MediumCalculationAccuracy)
+        area = area_props.area
+        if area > max_area:
+            max_area = area
+            largest_profile = prof
+
+    # Check if a profile was found
+    if largest_profile is None:
+        ui.messageBox('No valid profile found in the sketch.')
+        return
+
+    profile = largest_profile  # Use the profile with the largest area
 
     # Create a sweep input
     sweeps = newComp.features.sweepFeatures
@@ -398,6 +439,58 @@ def create_tube(circle_geom, intersection_point, newComp):
 
     # Create the sweep
     sweep = sweeps.add(sweep_input)
+    connector_body = sweep.bodies.item(0)
+    connector_collection.add(connector_body)
+    futil.log(f'connector collection: {connector_collection.count}')
+    # connector_body = connector_body.moveToComponent(newOccu)
+    
+    # overlap_amount = 1  
+    # overlap_distance = adsk.core.ValueInput.createByReal(overlap_amount)
+    # extent_distance_negative = adsk.fusion.DistanceExtentDefinition.create(overlap_distance)
+
+    # connector_extrudes = newComp.features.extrudeFeatures
+    # ext_connect = connector_extrudes.createInput(profile, adsk.fusion.FeatureOperations.JoinFeatureOperation)
+    # ext_connect.setOneSideExtent(extent_distance_negative, adsk.fusion.ExtentDirections.NegativeExtentDirection)
+
+    # # Set the target body to the cap body
+    # # ext_connect.participantBodies = [connector_collection.item(connector_collection.count - 1)]
+
+    # # Create the extrusion to cap off the end
+    # connector_end_extrusion = connector_extrudes.add(ext_connect)
+
+    # Add threading to the inner face
+    # Find the inner cylindrical face
+    faces = connector_body.faces
+    outer_radius = radius + wall_thickness + wall_thickness
+    for face in faces:
+        if isinstance(face.geometry, adsk.core.Cylinder):
+            inner_radius = face.geometry.radius
+            if (outer_radius > inner_radius):
+                # Apply threading to this face
+                futil.log(f'face radius: {inner_radius}')
+                connector_threads = newComp.features.threadFeatures
+                thread_data_query = connector_threads.threadDataQuery
+
+                thread_type = thread_data_query.allThreadTypes[10]  # Specify your thread type
+                is_internal = True  # False for external threads
+                futil.log(f'{size}')
+                # Get all designations for the matched size
+                all_designations = thread_data_query.allDesignations(thread_type, size)
+                # For simplicity, select the first designation
+                designation = all_designations[0]
+                futil.log(f'{designation}')
+
+                allClasses = thread_data_query.allClasses(True, thread_type, designation)
+                threadClass = allClasses[0]
+                futil.log(f'{threadClass}')
+                # Create the thread info
+                thread_info = connector_threads.createThreadInfo(is_internal, thread_type, designation, threadClass)
+                thread_input = connector_threads.createInput(face, thread_info)
+                # Set threading properties
+                thread_input.isFullLength = True
+                thread_input.isModeled = True
+                connector_threads.add(thread_input)
+                break
 
 
 def compute_best_intersection(points, directions):
