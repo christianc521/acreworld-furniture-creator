@@ -1,4 +1,5 @@
-![image](https://github.com/user-attachments/assets/3ea34d65-34c3-4c11-b11c-65ad4c124dda)
+![Animation](https://github.com/user-attachments/assets/fd9993d5-7ce8-4022-b4be-dc1fbd60ebca)
+
 
 Having recently purchased a Bambu A1 mini, I found myself to be quite impressed with the quality and strength of the prints produced, but was soon limited to the scale of what I can create given the small printing size. To challenge this, I decided to create an add-in within [Autodesk Fusion](https://www.autodesk.com/products/fusion-360/overview) that would allow me to create larger scale projects using readily available wooden dowels commonly found at any hardware store.
 
